@@ -528,72 +528,53 @@ const STATUS = {
 // ── cover auto-search ───────────────────────────────────────────────────────
 async function searchCovers(title) {
   const resultsEl = document.getElementById('coverResults')
-
-  // if cover already selected don't re-search
   if (document.getElementById('fCover').value) return
   if (!title || title.length < 2) { resultsEl.style.display='none'; return }
 
   resultsEl.style.display = 'flex'
   resultsEl.innerHTML = '<div class="cover-searching"><span class="cover-spinner"></span> Searching covers...</div>'
 
-  // Try multiple approaches in order
-  const tried = [
-    () => fetchMangadexDirect(title),
-    () => fetchMangadexProxy(title),
-    () => fetchOpenLibrary(title),
-  ]
-
-  for (const attempt of tried) {
-    try {
-      const results = await attempt()
-      if (results && results.length) {
-        resultsEl.innerHTML = results.map(r =>
-          `<img class="cover-option" src="${r.url}" title="${esc(r.title)}" onclick="selectCover('${r.url}')" onerror="this.style.display='none'" />`
-        ).join('')
-        return
+  try {
+    const query = `
+      query ($search: String) {
+        Page(perPage: 8) {
+          media(search: $search, type: MANGA, sort: SEARCH_MATCH) {
+            id
+            title { romaji english native }
+            coverImage { large extraLarge }
+          }
+        }
       }
-    } catch(e) { /* try next */ }
+    `
+    const res = await fetch('https://graphql.anilist.co', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({ query, variables: { search: title } })
+    })
+    const data = await res.json()
+    const media = data?.data?.Page?.media || []
+
+    const results = media
+      .map(m => ({
+        url:   m.coverImage?.extraLarge || m.coverImage?.large,
+        title: m.title?.english || m.title?.romaji || m.title?.native || ''
+      }))
+      .filter(r => r.url)
+
+    if (!results.length) {
+      resultsEl.innerHTML = '<div class="cover-none">No covers found — paste a URL below</div>'
+      showManualInput()
+      return
+    }
+
+    resultsEl.innerHTML = results.map(r =>
+      `<img class="cover-option" src="${r.url}" title="${esc(r.title)}" onclick="selectCover('${r.url}')" onerror="this.style.display='none'" />`
+    ).join('')
+
+  } catch(e) {
+    resultsEl.innerHTML = '<div class="cover-none">Could not fetch covers — paste a URL below</div>'
+    showManualInput()
   }
-
-  // all failed — show manual input
-  resultsEl.innerHTML = '<div class="cover-none">No covers found — paste a URL below</div>'
-  showManualInput()
-}
-
-async function fetchMangadexDirect(title) {
-  const url = `https://api.mangadex.org/manga?title=${encodeURIComponent(title)}&limit=8&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`
-  const res  = await fetch(url)
-  if (!res.ok) throw new Error('non-200')
-  const data = await res.json()
-  return parseMangadex(data)
-}
-
-async function fetchMangadexProxy(title) {
-  const target = `https://api.mangadex.org/manga?title=${encodeURIComponent(title)}&limit=8&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`
-  const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(target)}`)
-  if (!res.ok) throw new Error('non-200')
-  const data = await res.json()
-  return parseMangadex(data)
-}
-
-function parseMangadex(data) {
-  return (data.data || []).map(manga => {
-    const coverRel = (manga.relationships||[]).find(r=>r.type==='cover_art')
-    if (!coverRel?.attributes?.fileName) return null
-    const url = `https://uploads.mangadex.org/covers/${manga.id}/${coverRel.attributes.fileName}.256.jpg`
-    const t = manga.attributes?.title?.en || manga.attributes?.title?.['ja-ro'] || Object.values(manga.attributes?.title||{})[0] || ''
-    return { url, title: t }
-  }).filter(Boolean)
-}
-
-async function fetchOpenLibrary(title) {
-  // fallback: OpenLibrary covers (works for some manga published as books)
-  const res  = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(title)}&limit=6&fields=key,title,cover_i`)
-  if (!res.ok) throw new Error('non-200')
-  const data = await res.json()
-  return (data.docs||[])
-    .filter(d => d.cover_i)
-    .map(d => ({ url: `https://covers.openlibrary.org/b/id/${d.cover_i}-M.jpg`, title: d.title||'' }))
 }
 
 function showManualInput() {
