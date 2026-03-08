@@ -330,8 +330,6 @@ header{display:flex;align-items:center;justify-content:space-between;padding:16p
         <option value="title">Title A–Z</option>
         <option value="rating">Highest Rated</option>
         <option value="chapter">Chapter ↑</option>
-        <option value="started">Date Started</option>
-        <option value="finished">Date Finished</option>
       </select>
       <select class="ctrl-select" id="genreFilter" onchange="render()">
         <option value="">All Genres</option>
@@ -398,17 +396,12 @@ header{display:flex;align-items:center;justify-content:space-between;padding:16p
     </div>
 
     <div class="fg-row">
-      <div class="fg"><label>Chapter / Episode</label>
+      <div class="fg"><label>My Current Chapter</label>
         <input type="number" id="fChapter" placeholder="e.g. 45" min="0" />
       </div>
-      <div class="fg"><label>Total Chapters</label>
-        <input type="number" id="fTotalChapters" placeholder="e.g. 179" min="0" />
+      <div class="fg"><label>Total Chapters <span style="color:var(--text3);font-size:0.58rem;text-transform:none">(auto)</span></label>
+        <input type="number" id="fTotalChapters" placeholder="—" min="0" style="color:var(--text2)" />
       </div>
-    </div>
-
-    <div class="fg-row">
-      <div class="fg"><label>Date Started</label><input type="date" id="fDateStarted" /></div>
-      <div class="fg"><label>Date Finished</label><input type="date" id="fDateFinished" /></div>
     </div>
 
     <div class="fg"><label>Genres</label>
@@ -651,8 +644,8 @@ window.render = function() {
   if(sort==='title')    list.sort((a,b)=>a.title.localeCompare(b.title))
   if(sort==='rating')   list.sort((a,b)=>(b.rating||0)-(a.rating||0))
   if(sort==='chapter')  list.sort((a,b)=>(b.chapter||0)-(a.chapter||0))
-  if(sort==='started')  list.sort((a,b)=>(b.dateStarted||'').localeCompare(a.dateStarted||''))
-  if(sort==='finished') list.sort((a,b)=>(b.dateFinished||'').localeCompare(a.dateFinished||''))
+
+
   if(!list.length){ setGrid('<div class="empty-wrap"><div class="empty-icon">📭</div><p>No entries found.<br>Add something to your vault!</p></div>'); return }
   setGrid(list.map(cardHTML).join(''))
 }
@@ -690,9 +683,7 @@ function cardHTML(e) {
   const favIcon=e.favourite?'❤️':'🤍'
   const link=e.link?`<a class="card-link" href="${esc(e.link)}" target="_blank" rel="noopener">🔗 View</a>`:''
   const dates=[]
-  if(e.dateStarted) dates.push('▶ '+e.dateStarted)
-  if(e.dateFinished) dates.push('✓ '+e.dateFinished)
-  const datesHTML=dates.length?`<div class="card-dates">${dates.join('  ')}</div>`:''
+  const datesHTML=''
   const chapHTML=e.chapter?`<div class="card-chapter">Ch. ${e.chapter}${e.totalChapters?' / '+e.totalChapters:''}</div>`:''
   return `<div class="card">
     <div class="card-cover">
@@ -792,11 +783,11 @@ function renderCharts() {
 // ── EXPORT CSV ─────────────────────────────────────────────────────────────
 window.exportCSV = function() {
   if(!entries.length){ showToast('Nothing to export!','error'); return }
-  const h=['Title','Type','Reading Status','Publication Status','Chapter','Total Chapters','Rating','Genres','Date Started','Date Finished','Link','Notes','Favourite']
+  const h=['Title','Type','Reading Status','Publication Status','Chapter','Total Chapters','Rating','Genres','Link','Notes','Favourite']
   const rows=entries.map(e=>[
     e.title, e.type, e.readStatus||'', e.pubStatus||'',
     e.chapter||'', e.totalChapters||'', e.rating||'',
-    (e.genres||[]).join('; '), e.dateStarted||'', e.dateFinished||'',
+    (e.genres||[]).join('; '),
     e.link||'', (e.notes||'').replace(/\n/g,' '), e.favourite?'Yes':'No'
   ].map(x=>`"${String(x).replace(/"/g,'""')}"`).join(','))
   const csv=[h.join(','),...rows].join('\n')
@@ -814,7 +805,7 @@ window.oClick = (e,id)=>{ if(e.target===document.getElementById(id)) closeO(id) 
 
 // ── COVER + ANILIST FETCH ──────────────────────────────────────────────────
 async function fetchAniList(title) {
-  const q=`query($s:String){Page(perPage:8){media(search:$s,type:MANGA,sort:SEARCH_MATCH){id title{romaji english}status coverImage{extraLarge large}genres}}}`
+  const q=`query($s:String){Page(perPage:8){media(search:$s,type:MANGA,sort:SEARCH_MATCH){id title{romaji english}status chapters volumes coverImage{extraLarge large}genres}}}`
   const res=await fetch('https://graphql.anilist.co',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({query:q,variables:{s:title}})})
   const data=await res.json()
   return data?.data?.Page?.media||[]
@@ -845,13 +836,18 @@ async function fetchPubStatus(title) {
     if(!media.length){ display.textContent='Not found on AniList'; hidden.value='unknown'; return }
     const m=media[0]
     const raw=m.status||'unknown'
-    // map AniList statuses to our labels
     const map={FINISHED:'Completed',RELEASING:'Ongoing',HIATUS:'Hiatus',CANCELLED:'Cancelled',NOT_YET_RELEASED:'Ongoing'}
     const label=map[raw]||'Unknown'
     hidden.value=label
     const colors={Completed:'#22c55e',Ongoing:'#06b6d4',Hiatus:'#f59e0b',Cancelled:'#f87171',Unknown:'#5550a0'}
-    display.innerHTML=`<span style="color:${colors[label]||'#9990c8'};font-weight:700">${label}</span>`
-    // also fill genres if empty
+    // show status + chapter count
+    const chapCount=m.chapters||m.volumes||null
+    const chapText=chapCount?` · ${chapCount} chapters`:''
+    display.innerHTML=`<span style="color:${colors[label]||'#9990c8'};font-weight:700">${label}</span><span style="color:var(--text3);font-size:0.7rem">${chapText}</span>`
+    // auto-fill total chapters if not already set
+    const tcEl=document.getElementById('fTotalChapters')
+    if(chapCount && !tcEl.value) tcEl.value=chapCount
+    // auto-fill genres if empty
     const gf=document.getElementById('fGenres')
     if(!gf.value && m.genres?.length) gf.value=m.genres.slice(0,5).join(', ')
   } catch(e){
@@ -876,7 +872,7 @@ window.clearCover = function() {
 
 // ── OPEN ADD / EDIT ────────────────────────────────────────────────────────
 function resetForm() {
-  ;['fTitle','fChapter','fTotalChapters','fGenres','fLink','fNotes','fDateStarted','fDateFinished'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value='' })
+  ;['fTitle','fChapter','fTotalChapters','fGenres','fLink','fNotes'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value='' })
   document.getElementById('fType').value='manhwa'
   document.getElementById('fReadStatus').value='plan'
   document.getElementById('fCover').value=''
@@ -912,8 +908,6 @@ window.openEdit = function(id) {
   document.getElementById('fGenres').value=(e.genres||[]).join(', ')
   document.getElementById('fLink').value=e.link||''
   document.getElementById('fNotes').value=e.notes||''
-  document.getElementById('fDateStarted').value=e.dateStarted||''
-  document.getElementById('fDateFinished').value=e.dateFinished||''
   document.getElementById('fPubStatus').value=e.pubStatus||''
   const pubLabel=e.pubStatus||'Unknown'
   const colors={Completed:'#22c55e',Ongoing:'#06b6d4',Hiatus:'#f59e0b',Cancelled:'#f87171'}
@@ -954,8 +948,6 @@ window.saveEntry = async function() {
     coverUrl:document.getElementById('fCover').value.trim()||null,
     rating:currentRating,
     notes:document.getElementById('fNotes').value.trim()||null,
-    dateStarted:document.getElementById('fDateStarted').value||null,
-    dateFinished:document.getElementById('fDateFinished').value||null,
   }
   try {
     if(editingId) await updateDoc(doc(DB,COLL,editingId),payload)
