@@ -307,6 +307,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:16p
       <button class="btn-icon" onclick="toggleTheme()" id="themeBtn" title="Toggle light/dark">🌙</button>
       <button class="btn btn-primary" onclick="openAdd()">＋ Add</button>
       <button class="btn-icon" onclick="exportCSV()" title="Export to CSV">📤</button>
+      <button class="btn-icon" onclick="openGoogleSetup()" title="Google Image Search setup">🔍</button>
       <button class="btn btn-ghost" onclick="doSignOut()">Sign Out</button>
     </div>
   </header>
@@ -462,6 +463,44 @@ header{display:flex;align-items:center;justify-content:space-between;padding:16p
     <div class="modal-actions">
       <button class="btn" onclick="closeO('deleteOverlay')">Cancel</button>
       <button class="btn btn-danger" id="confirmDelBtn">Delete</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══ GOOGLE SETUP MODAL ══ -->
+<div class="overlay" id="googleSetupOverlay" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal" style="max-width:480px">
+    <h2>🔍 Google Image Search Setup</h2>
+    <p style="color:var(--text2);font-size:0.72rem;line-height:1.8;margin-bottom:18px">
+      Free — 100 searches/day. One-time setup takes ~5 minutes.<br>
+      Your keys are saved in your browser only, never sent anywhere else.
+    </p>
+
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:14px 16px;font-size:0.68rem;color:var(--text2);line-height:2.1;margin-bottom:18px">
+      <strong style="color:var(--text)">Step 1 — Get API Key:</strong><br>
+      1. Go to <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:#a78bfa">console.cloud.google.com/apis/credentials</a><br>
+      2. Click <strong style="color:var(--text)">Create credentials → API key</strong> → copy it<br>
+      3. Then go to <a href="https://console.cloud.google.com/apis/library/customsearch.googleapis.com" target="_blank" style="color:#a78bfa">Custom Search API</a> → click <strong style="color:var(--text)">Enable</strong><br><br>
+      <strong style="color:var(--text)">Step 2 — Get Search Engine ID:</strong><br>
+      1. Go to <a href="https://programmablesearchengine.google.com/controlpanel/create" target="_blank" style="color:#a78bfa">programmablesearchengine.google.com</a><br>
+      2. Name it anything, enable <strong style="color:var(--text)">Search the entire web</strong>, click Create<br>
+      3. Click your new engine → <strong style="color:var(--text)">Customise → Copy the Search engine ID</strong>
+    </div>
+
+    <div class="fg">
+      <label>Google API Key</label>
+      <input type="text" id="gApiKey" placeholder="AIzaSy..." />
+    </div>
+    <div class="fg">
+      <label>Search Engine ID (cx)</label>
+      <input type="text" id="gCxId" placeholder="a1b2c3d4e5f6g7h8i:j9k0..." />
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-danger" onclick="clearGoogleCfg()" style="flex:0.5">Clear</button>
+      <button class="btn" onclick="document.getElementById('googleSetupOverlay').classList.remove('open')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveGoogleCfg()">Save &amp; Enable →</button>
     </div>
   </div>
 </div>
@@ -853,30 +892,63 @@ async function searchCovers(title) {
 }
 
 async function searchPornhwaCovers(title, resultsEl) {
-  // Try multiple image sources for pornhwa posters
-  const query=encodeURIComponent(title+' manhwa poster cover')
-  
-  // Try Bing image search via corsproxy
-  const bingUrl=`https://www.bing.com/images/search?q=${query}&form=HDRSC2&first=1`
-  const proxyUrl=`https://corsproxy.io/?${encodeURIComponent(bingUrl)}`
-  
-  const res=await fetch(proxyUrl,{headers:{'User-Agent':'Mozilla/5.0'}})
-  if(!res.ok) throw new Error('fetch failed')
-  const html=await res.text()
-  
-  // Extract image URLs from Bing results
-  const matches=[...html.matchAll(/"murl":"([^"]+\.(?:jpg|jpeg|png|webp))"/gi)]
-  const urls=[...new Set(matches.map(m=>m[1]))].slice(0,8)
-  
-  if(!urls.length){
-    resultsEl.innerHTML='<div class="cover-none">No images found — paste URL below</div>'
+  const cfg=getGoogleCfg()
+  if(!cfg){
+    resultsEl.innerHTML='<div class="cover-none">⚙ Google Image Search not set up — <button onclick="openGoogleSetup()" style="background:none;border:none;color:var(--accent2);cursor:pointer;font-family:Space Mono,monospace;font-size:0.68rem;text-decoration:underline">Set up now (free)</button></div>'
     showManualCoverInput()
     return
   }
-  resultsEl.innerHTML=urls.map(url=>
-    `<img class="cover-option" src="${url}" onclick="selectCover('${url.replace(/'/g,'%27')}')" onerror="this.remove()" loading="lazy"/>`
-  ).join('')
+  const query=`${title} manhwa webtoon cover poster`
+  const url=`https://www.googleapis.com/customsearch/v1?key=${cfg.key}&cx=${cfg.cx}&q=${encodeURIComponent(query)}&searchType=image&num=8&imgType=photo&safe=off`
+  const res=await fetch(url)
+  const data=await res.json()
+  if(data.error){
+    if(data.error.code===429||data.error.status==='RESOURCE_EXHAUSTED'){
+      resultsEl.innerHTML='<div class="cover-none">⚠ Daily limit reached (100/day) — paste URL below</div>'
+    } else {
+      resultsEl.innerHTML=`<div class="cover-none">⚠ ${data.error.message} — paste URL below</div>`
+    }
+    showManualCoverInput(); return
+  }
+  const items=data.items||[]
+  if(!items.length){
+    resultsEl.innerHTML='<div class="cover-none">No images found — paste URL below</div>'
+    showManualCoverInput(); return
+  }
+  resultsEl.innerHTML=items.map(item=>{
+    const url=item.link
+    return `<img class="cover-option" src="${url}" onclick="selectCover('${url.replace(/'/g,'%27')}')" onerror="this.remove()" loading="lazy"/>`
+  }).join('')
   showManualCoverInput()
+}
+
+function getGoogleCfg(){
+  const s=localStorage.getItem('mv_gcse')
+  if(!s) return null
+  try{ const p=JSON.parse(s); return (p.key&&p.cx)?p:null }catch(e){ return null }
+}
+
+window.openGoogleSetup=function(){
+  const existing=getGoogleCfg()||{}
+  document.getElementById('gApiKey').value=existing.key||''
+  document.getElementById('gCxId').value=existing.cx||''
+  document.getElementById('googleSetupOverlay').classList.add('open')
+}
+window.saveGoogleCfg=function(){
+  const key=document.getElementById('gApiKey').value.trim()
+  const cx=document.getElementById('gCxId').value.trim()
+  if(!key||!cx){ alert('Both fields are required'); return }
+  localStorage.setItem('mv_gcse',JSON.stringify({key,cx}))
+  document.getElementById('googleSetupOverlay').classList.remove('open')
+  showToast('Google Image Search enabled! 🎉')
+  // re-trigger cover search
+  const t=document.getElementById('fTitle').value.trim()
+  if(t) searchCovers(t)
+}
+window.clearGoogleCfg=function(){
+  localStorage.removeItem('mv_gcse')
+  document.getElementById('googleSetupOverlay').classList.remove('open')
+  showToast('Google config cleared.')
 }
 
 function showManualCoverInput(){
