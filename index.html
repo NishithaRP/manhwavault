@@ -388,11 +388,17 @@ header{display:flex;align-items:center;justify-content:space-between;padding:16p
       <input type="text" id="fTitle" placeholder="Enter title..." />
     </div>
 
-    <!-- Publication status (auto-fetched) -->
+    <!-- Publication status -->
     <div class="fg" id="pubStatusWrap">
-      <label>Publication Status <span style="color:var(--text3);font-size:0.58rem;text-transform:none">(auto-fetched from AniList)</span></label>
-      <div id="pubStatusDisplay" style="font-size:0.75rem;color:var(--text2);padding:8px 0;min-height:28px">Type a title to auto-fetch...</div>
-      <input type="hidden" id="fPubStatus" value="" />
+      <label>Publication Status <span id="pubStatusHint" style="color:var(--text3);font-size:0.58rem;text-transform:none">(auto-fetched from AniList)</span></label>
+      <div id="pubStatusDisplay" style="font-size:0.72rem;color:var(--text2);padding:3px 0;min-height:20px"></div>
+      <select id="fPubStatus" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px 11px;color:var(--text);font-family:Space Mono,monospace;font-size:0.75rem;outline:none;margin-top:4px">
+        <option value="unknown">Unknown</option>
+        <option value="Ongoing">Ongoing</option>
+        <option value="Completed">Completed</option>
+        <option value="Hiatus">Hiatus</option>
+        <option value="Cancelled">Cancelled</option>
+      </select>
     </div>
 
     <div class="fg-row">
@@ -414,8 +420,11 @@ header{display:flex;align-items:center;justify-content:space-between;padding:16p
 
     <!-- Cover picker -->
     <div class="fg">
-      <label>Cover <span style="color:var(--text3);font-size:0.58rem;text-transform:none">(auto-fetched when you type the title)</span></label>
+      <label>Cover <span id="coverHint" style="color:var(--text3);font-size:0.58rem;text-transform:none">(auto-fetched when you type the title)</span></label>
       <div id="coverResults"></div>
+      <div id="coverManualWrap" style="display:none;margin-top:8px">
+        <input type="text" id="coverManualUrl" placeholder="Paste cover image URL here..." style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:9px 11px;color:var(--text);font-family:Space Mono,monospace;font-size:0.75rem;outline:none" oninput="onManualCoverInput(this.value)" />
+      </div>
       <div id="coverPreview">
         <img id="coverPreviewImg" src="" alt="cover" />
         <button class="cover-clear-btn" onclick="clearCover()">✕</button>
@@ -815,44 +824,96 @@ async function searchCovers(title) {
   const resultsEl=document.getElementById('coverResults')
   if(document.getElementById('fCover').value) return
   if(!title||title.length<2){ resultsEl.style.display='none'; return }
+  const isPornhwa=document.getElementById('fType').value==='pornhwa'
+  if(isPornhwa){
+    // Use DuckDuckGo image proxy — no API key needed
+    resultsEl.style.display='flex'
+    resultsEl.innerHTML='<div class="cover-searching"><span class="cover-spinner"></span> Searching images...</div>'
+    try {
+      await searchPornhwaCovers(title, resultsEl)
+    } catch(e) {
+      resultsEl.innerHTML='<div class="cover-none">Could not search — paste URL below</div>'
+      showManualCoverInput()
+    }
+    return
+  }
+  // Manhwa — use AniList
+  document.getElementById('coverManualWrap').style.display='none'
+  document.getElementById('coverHint').textContent='(auto-fetched when you type the title)'
   resultsEl.style.display='flex'
   resultsEl.innerHTML='<div class="cover-searching"><span class="cover-spinner"></span> Searching...</div>'
   try {
     const media=await fetchAniList(title)
     const results=media.map(m=>({url:m.coverImage?.extraLarge||m.coverImage?.large,title:m.title?.english||m.title?.romaji||''})).filter(r=>r.url)
-    if(!results.length){ resultsEl.innerHTML='<div class="cover-none">No covers found — add URL manually in Notes</div>'; return }
+    if(!results.length){ resultsEl.innerHTML='<div class="cover-none">No covers found</div>'; return }
     resultsEl.innerHTML=results.map(r=>`<img class="cover-option" src="${r.url}" title="${esc(r.title)}" onclick="selectCover('${r.url}')" onerror="this.style.display='none'" loading="lazy"/>`).join('')
   } catch(e){
     resultsEl.innerHTML='<div class="cover-none">Could not fetch covers</div>'
   }
 }
 
+async function searchPornhwaCovers(title, resultsEl) {
+  // Try multiple image sources for pornhwa posters
+  const query=encodeURIComponent(title+' manhwa poster cover')
+  
+  // Try Bing image search via corsproxy
+  const bingUrl=`https://www.bing.com/images/search?q=${query}&form=HDRSC2&first=1`
+  const proxyUrl=`https://corsproxy.io/?${encodeURIComponent(bingUrl)}`
+  
+  const res=await fetch(proxyUrl,{headers:{'User-Agent':'Mozilla/5.0'}})
+  if(!res.ok) throw new Error('fetch failed')
+  const html=await res.text()
+  
+  // Extract image URLs from Bing results
+  const matches=[...html.matchAll(/"murl":"([^"]+\.(?:jpg|jpeg|png|webp))"/gi)]
+  const urls=[...new Set(matches.map(m=>m[1]))].slice(0,8)
+  
+  if(!urls.length){
+    resultsEl.innerHTML='<div class="cover-none">No images found — paste URL below</div>'
+    showManualCoverInput()
+    return
+  }
+  resultsEl.innerHTML=urls.map(url=>
+    `<img class="cover-option" src="${url}" onclick="selectCover('${url.replace(/'/g,'%27')}')" onerror="this.remove()" loading="lazy"/>`
+  ).join('')
+  showManualCoverInput()
+}
+
+function showManualCoverInput(){
+  document.getElementById('coverHint').textContent='(select from results or paste URL below)'
+  document.getElementById('coverManualWrap').style.display='block'
+}
+
 async function fetchPubStatus(title) {
+  const isPornhwa=document.getElementById('fType').value==='pornhwa'
   const display=document.getElementById('pubStatusDisplay')
-  const hidden=document.getElementById('fPubStatus')
+  const sel=document.getElementById('fPubStatus')
+  if(isPornhwa){
+    display.textContent=''
+    document.getElementById('pubStatusHint').textContent='(set manually — not on AniList)'
+    return
+  }
+  document.getElementById('pubStatusHint').textContent='(auto-fetched from AniList)'
   display.textContent='Fetching...'
   try {
     const media=await fetchAniList(title)
-    if(!media.length){ display.textContent='Not found on AniList'; hidden.value='unknown'; return }
+    if(!media.length){ display.textContent='Not found on AniList'; sel.value='unknown'; return }
     const m=media[0]
     const raw=m.status||'unknown'
     const map={FINISHED:'Completed',RELEASING:'Ongoing',HIATUS:'Hiatus',CANCELLED:'Cancelled',NOT_YET_RELEASED:'Ongoing'}
     const label=map[raw]||'Unknown'
-    hidden.value=label
+    sel.value=label
     const colors={Completed:'#22c55e',Ongoing:'#06b6d4',Hiatus:'#f59e0b',Cancelled:'#f87171',Unknown:'#5550a0'}
-    // show status + chapter count
     const chapCount=m.chapters||m.volumes||null
     const chapText=chapCount?` · ${chapCount} chapters`:''
     display.innerHTML=`<span style="color:${colors[label]||'#9990c8'};font-weight:700">${label}</span><span style="color:var(--text3);font-size:0.7rem">${chapText}</span>`
-    // auto-fill total chapters if not already set
     const tcEl=document.getElementById('fTotalChapters')
     if(chapCount && !tcEl.value) tcEl.value=chapCount
-    // auto-fill genres if empty
     const gf=document.getElementById('fGenres')
     if(!gf.value && m.genres?.length) gf.value=m.genres.slice(0,5).join(', ')
   } catch(e){
     display.textContent='Could not fetch'
-    hidden.value='unknown'
+    sel.value='unknown'
   }
 }
 
@@ -876,10 +937,14 @@ function resetForm() {
   document.getElementById('fType').value='manhwa'
   document.getElementById('fReadStatus').value='plan'
   document.getElementById('fCover').value=''
-  document.getElementById('fPubStatus').value=''
-  document.getElementById('pubStatusDisplay').textContent='Type a title to auto-fetch...'
+  document.getElementById('fPubStatus').value='unknown'
+  document.getElementById('pubStatusDisplay').textContent=''
+  document.getElementById('pubStatusHint').textContent='(auto-fetched from AniList)'
+  document.getElementById('coverHint').textContent='(auto-fetched when you type the title)'
   document.getElementById('coverResults').style.display='none'
   document.getElementById('coverPreview').style.display='none'
+  document.getElementById('coverManualWrap').style.display='none'
+  const mu=document.getElementById('coverManualUrl'); if(mu) mu.value=''
   setRating(0)
 }
 
@@ -891,7 +956,7 @@ window.openAdd = function() {
   setTimeout(()=>{
     const t=document.getElementById('fTitle')
     t.focus()
-    t.oninput=()=>{ clearTimeout(coverTimer); coverTimer=setTimeout(()=>{ searchCovers(t.value.trim()); fetchPubStatus(t.value.trim()) },800) }
+    t.oninput=()=>{ clearTimeout(coverTimer); coverTimer=setTimeout(()=>{ const _t=t.value.trim(); const _p=document.getElementById('fType').value==='pornhwa'; searchCovers(_t); if(!_p) fetchPubStatus(_t) },800) }
   },200)
 }
 
@@ -921,11 +986,38 @@ window.openEdit = function(id) {
   openO('entryOverlay')
   setTimeout(()=>{
     const t=document.getElementById('fTitle')
-    t.oninput=()=>{ clearTimeout(coverTimer); coverTimer=setTimeout(()=>{ searchCovers(t.value.trim()); fetchPubStatus(t.value.trim()) },800) }
+    t.oninput=()=>{ clearTimeout(coverTimer); coverTimer=setTimeout(()=>{ const _t=t.value.trim(); const _p=document.getElementById('fType').value==='pornhwa'; searchCovers(_t); if(!_p) fetchPubStatus(_t) },800) }
   },200)
 }
 
-window.onTypeChange = function() { /* reserved for future use */ }
+window.onTypeChange = function() {
+  const title=document.getElementById('fTitle').value.trim()
+  const isPornhwa=document.getElementById('fType').value==='pornhwa'
+  if(isPornhwa){
+    document.getElementById('pubStatusHint').textContent='(set manually — not on AniList)'
+    document.getElementById('pubStatusDisplay').textContent=''
+    document.getElementById('fTotalChapters').value=''
+    document.getElementById('coverHint').textContent='(select from results or paste URL below)'
+    if(!document.getElementById('fCover').value) showManualCoverInput()
+  } else {
+    document.getElementById('pubStatusHint').textContent='(auto-fetched from AniList)'
+    document.getElementById('coverHint').textContent='(auto-fetched when you type the title)'
+    document.getElementById('coverManualWrap').style.display='none'
+    document.getElementById('coverResults').style.display='none'
+  }
+  if(title){ searchCovers(title); if(!isPornhwa) fetchPubStatus(title) }
+}
+
+window.onManualCoverInput = function(url) {
+  if(url.trim()){
+    document.getElementById('fCover').value=url.trim()
+    document.getElementById('coverPreviewImg').src=url.trim()
+    document.getElementById('coverPreview').style.display='block'
+  } else {
+    document.getElementById('fCover').value=''
+    document.getElementById('coverPreview').style.display='none'
+  }
+}
 
 window.setRating = n=>{
   currentRating=n
