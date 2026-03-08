@@ -197,6 +197,26 @@ header { display:flex;align-items:center;justify-content:space-between;padding:2
 .stars-wrap { display:flex;gap:4px; }
 .star { font-size:1.4rem;cursor:pointer;filter:grayscale(1) opacity(0.35);transition:filter 0.15s; }
 .star.lit { filter:none; }
+
+/* cover picker */
+#coverResults { display:flex;flex-wrap:wrap;gap:8px;margin-top:8px; }
+.cover-option {
+  width:70px; height:95px; object-fit:cover;
+  border-radius:6px; cursor:pointer;
+  border:2px solid transparent;
+  transition:all 0.2s; opacity:0.8;
+}
+.cover-option:hover { border-color:var(--accent2); opacity:1; transform:scale(1.05); }
+.cover-searching {
+  font-size:0.7rem; color:var(--text3);
+  display:flex; align-items:center; gap:8px; margin-top:6px;
+}
+.cover-spinner {
+  width:14px;height:14px;border:2px solid var(--surface3);
+  border-top-color:var(--accent);border-radius:50%;
+  animation:spin 0.6s linear infinite;display:inline-block;
+}
+.cover-none { font-size:0.7rem;color:var(--text3);margin-top:6px; }
 .modal-actions { display:flex;gap:10px;margin-top:24px; }
 .modal-actions .btn { flex:1;text-align:center; }
 
@@ -429,8 +449,18 @@ header { display:flex;align-items:center;justify-content:space-between;padding:2
       <input type="text" id="fGenres" placeholder="Action, Romance, Fantasy..." />
     </div>
     <div class="form-group">
-      <label>Cover Image URL (optional)</label>
-      <input type="text" id="fCover" placeholder="https://..." />
+      <label>Cover Image <span style="color:var(--text3);font-size:0.58rem;text-transform:none;letter-spacing:0">(auto-fetched when you type the title)</span></label>
+      <div id="coverPickerWrap">
+        <!-- Cover search results appear here -->
+        <div id="coverResults" style="display:none"></div>
+        <!-- Selected preview -->
+        <div id="coverPreview" style="display:none;margin-top:8px;position:relative;display:none">
+          <img id="coverPreviewImg" src="" style="width:80px;height:110px;object-fit:cover;border-radius:6px;border:2px solid var(--accent2);" />
+          <button onclick="clearCover()" style="position:absolute;top:-6px;left:68px;background:#ef4444;border:none;border-radius:50%;width:18px;height:18px;color:white;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1">✕</button>
+          <div style="font-size:0.62rem;color:var(--text2);margin-top:4px">Cover selected ✓</div>
+        </div>
+        <input type="hidden" id="fCover" />
+      </div>
     </div>
     <div class="form-group">
       <label>Rating</label>
@@ -485,6 +515,7 @@ import {
 let AUTH = null, DB = null, currentUser = null
 let entries = [], editingId = null, currentRating = 0
 let currentFilter = 'all', toastTimer = null
+let coverSearchTimer = null
 const COLL = 'entries'
 const STATUS = {
   reading:    {label:'Reading',     icon:'▶'},
@@ -492,6 +523,81 @@ const STATUS = {
   finished:   {label:'Finished',    icon:'✓'},
   downloaded: {label:'Downloaded',  icon:'↓'},
   plan:       {label:'Plan to Read',icon:'◷'},
+}
+
+// ── cover auto-search ───────────────────────────────────────────────────────
+async function searchCovers(title) {
+  const resultsEl = document.getElementById('coverResults')
+  const previewEl = document.getElementById('coverPreview')
+
+  // if cover already selected don't re-search
+  if (document.getElementById('fCover').value) return
+
+  if (!title || title.length < 2) { resultsEl.style.display='none'; return }
+
+  resultsEl.style.display = 'flex'
+  resultsEl.innerHTML = '<div class="cover-searching"><span class="cover-spinner"></span> Searching covers...</div>'
+
+  try {
+    const res  = await fetch(`https://api.mangadex.org/manga?title=${encodeURIComponent(title)}&limit=6&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`)
+    const data = await res.json()
+    const results = (data.data || []).map(manga => {
+      const coverRel = (manga.relationships||[]).find(r=>r.type==='cover_art')
+      if (!coverRel?.attributes?.fileName) return null
+      const url = `https://uploads.mangadex.org/covers/${manga.id}/${coverRel.attributes.fileName}.256.jpg`
+      const titleVal = manga.attributes?.title?.en || manga.attributes?.title?.['ja-ro'] || Object.values(manga.attributes?.title||{})[0] || ''
+      return { url, title: titleVal }
+    }).filter(Boolean)
+
+    if (!results.length) {
+      resultsEl.innerHTML = '<div class="cover-none">No covers found — you can paste a URL manually below</div>'
+      // show manual input
+      showManualInput()
+      return
+    }
+
+    resultsEl.innerHTML = results.map((r,i) =>
+      `<img class="cover-option" src="${r.url}" title="${r.title}" onclick="selectCover('${r.url}')" onerror="this.style.display='none'" />`
+    ).join('')
+  } catch(e) {
+    resultsEl.innerHTML = '<div class="cover-none">Could not fetch covers — paste a URL manually below</div>'
+    showManualInput()
+  }
+}
+
+function showManualInput() {
+  const wrap = document.getElementById('coverPickerWrap')
+  if (!document.getElementById('fCoverManual')) {
+    const inp = document.createElement('input')
+    inp.type='text'; inp.id='fCoverManual'; inp.placeholder='Paste cover image URL...'
+    inp.style.cssText='width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-family:Space Mono,monospace;font-size:0.8rem;outline:none;margin-top:8px'
+    inp.oninput = () => {
+      document.getElementById('fCover').value = inp.value.trim()
+      if (inp.value.trim()) {
+        document.getElementById('coverPreviewImg').src = inp.value.trim()
+        document.getElementById('coverPreview').style.display = 'block'
+      }
+    }
+    wrap.appendChild(inp)
+  }
+}
+
+window.selectCover = function(url) {
+  document.getElementById('fCover').value = url
+  document.getElementById('coverPreviewImg').src = url
+  document.getElementById('coverPreview').style.display = 'block'
+  document.getElementById('coverResults').style.display = 'none'
+}
+
+window.clearCover = function() {
+  document.getElementById('fCover').value = ''
+  document.getElementById('coverPreview').style.display = 'none'
+  document.getElementById('coverResults').style.display = 'none'
+  const manual = document.getElementById('fCoverManual')
+  if (manual) manual.value = ''
+  // re-trigger search with current title
+  const t = document.getElementById('fTitle').value.trim()
+  if (t) searchCovers(t)
 }
 
 // ── screen helpers ──────────────────────────────────────────────────────────
@@ -744,15 +850,38 @@ window.closeOverlay = id => document.getElementById(id).classList.remove('open')
 window.overlayClick = (e,id) => { if(e.target===document.getElementById(id)) closeOverlay(id) }
 
 // ── add / edit ─────────────────────────────────────────────────────────────
+function resetCoverPicker() {
+  document.getElementById('fCover').value = ''
+  document.getElementById('coverResults').style.display = 'none'
+  document.getElementById('coverPreview').style.display = 'none'
+  const manual = document.getElementById('fCoverManual')
+  if (manual) manual.remove()
+}
+
+function showCoverPreview(url) {
+  if (!url) return
+  document.getElementById('coverPreviewImg').src = url
+  document.getElementById('coverPreview').style.display = 'block'
+  document.getElementById('coverResults').style.display = 'none'
+}
+
 window.openAdd = function() {
   editingId=null; currentRating=0
   document.getElementById('modalTitle').textContent='Add New Entry'
   document.getElementById('saveBtn').textContent='Save Entry'
-  ;['fTitle','fAuthor','fChapter','fGenres','fCover','fNotes'].forEach(id=>document.getElementById(id).value='')
+  ;['fTitle','fAuthor','fChapter','fGenres','fNotes'].forEach(id=>document.getElementById(id).value='')
   document.getElementById('fType').value='manhwa'
   document.getElementById('fStatus').value='plan'
+  resetCoverPicker()
   setRating(0); openOverlay('entryOverlay')
-  setTimeout(()=>document.getElementById('fTitle').focus(),200)
+  setTimeout(()=>{
+    const titleEl = document.getElementById('fTitle')
+    titleEl.focus()
+    titleEl.oninput = () => {
+      clearTimeout(coverSearchTimer)
+      coverSearchTimer = setTimeout(()=>searchCovers(titleEl.value.trim()), 700)
+    }
+  }, 200)
 }
 
 window.openEdit = function(id) {
@@ -766,9 +895,21 @@ window.openEdit = function(id) {
   document.getElementById('fAuthor').value =e.author  ||''
   document.getElementById('fChapter').value=e.chapter ||''
   document.getElementById('fGenres').value =(e.genres||[]).join(', ')
-  document.getElementById('fCover').value  =e.coverUrl||''
   document.getElementById('fNotes').value  =e.notes   ||''
+  resetCoverPicker()
+  if (e.coverUrl) {
+    document.getElementById('fCover').value = e.coverUrl
+    showCoverPreview(e.coverUrl)
+  }
   setRating(e.rating||0); openOverlay('entryOverlay')
+  // also allow re-searching on title change
+  setTimeout(()=>{
+    const titleEl = document.getElementById('fTitle')
+    titleEl.oninput = () => {
+      clearTimeout(coverSearchTimer)
+      coverSearchTimer = setTimeout(()=>searchCovers(titleEl.value.trim()), 700)
+    }
+  }, 200)
 }
 
 window.setRating = n => {
