@@ -903,10 +903,16 @@ async function searchPornhwaCovers(title, resultsEl) {
   const res=await fetch(url)
   const data=await res.json()
   if(data.error){
-    if(data.error.code===429||data.error.status==='RESOURCE_EXHAUSTED'){
+    const code=data.error.code
+    const msg=data.error.message||''
+    if(code===429||data.error.status==='RESOURCE_EXHAUSTED'){
       resultsEl.innerHTML='<div class="cover-none">⚠ Daily limit reached (100/day) — paste URL below</div>'
+    } else if(code===403||msg.includes('accessNotConfigured')||msg.includes('Custom Search')){
+      resultsEl.innerHTML='<div class="cover-none">⚠ API not ready yet — wait 2-3 minutes then try again, or paste URL below</div>'
+    } else if(code===400){
+      resultsEl.innerHTML='<div class="cover-none">⚠ Invalid API key or Search Engine ID — click 🔍 in header to check</div>'
     } else {
-      resultsEl.innerHTML=`<div class="cover-none">⚠ ${data.error.message} — paste URL below</div>`
+      resultsEl.innerHTML=`<div class="cover-none">⚠ ${msg||'Search failed'} (code ${code}) — paste URL below</div>`
     }
     showManualCoverInput(); return
   }
@@ -941,9 +947,13 @@ window.saveGoogleCfg=function(){
   localStorage.setItem('mv_gcse',JSON.stringify({key,cx}))
   document.getElementById('googleSetupOverlay').classList.remove('open')
   showToast('Google Image Search enabled! 🎉')
-  // re-trigger cover search
-  const t=document.getElementById('fTitle').value.trim()
-  if(t) searchCovers(t)
+  // clear cover results and re-trigger
+  const resultsEl=document.getElementById('coverResults')
+  if(resultsEl) { resultsEl.innerHTML=''; resultsEl.style.display='none' }
+  setTimeout(()=>{
+    const t=document.getElementById('fTitle').value.trim()
+    if(t) searchCovers(t)
+  }, 500)
 }
 window.clearGoogleCfg=function(){
   localStorage.removeItem('mv_gcse')
