@@ -873,7 +873,7 @@ async function searchCovers(title) {
     const media=await fetchAniList(title)
     const results=media.map(m=>({url:m.coverImage?.extraLarge||m.coverImage?.large,title:m.title?.english||m.title?.romaji||''})).filter(r=>r.url)
     if(!results.length){ resultsEl.innerHTML='<div class="cover-none">No covers found — paste URL below</div>'; return }
-    resultsEl.innerHTML=results.map(r=>`<img class="cover-option" src="${r.url}" title="${esc(r.title)}" onclick="selectCover('${r.url}')" onerror="this.style.display='none'" loading="lazy"/>`).join('')
+    resultsEl.innerHTML=results.map(r=>`<img class="cover-option" src="${r.url}" title="${esc(r.title)}" onclick="selectCover('${r.url}','${r.title.replace(/'/g,\"&#39;\").replace(/\\/g,'')}')" onerror="this.style.display='none'" loading="lazy"/>`).join('')
   } catch(e){
     resultsEl.innerHTML='<div class="cover-none">Could not fetch covers — paste URL below</div>'
   }
@@ -987,11 +987,16 @@ async function fetchPubStatus(title) {
   }
 }
 
-window.selectCover = function(url) {
+window.selectCover = function(url, title) {
   document.getElementById('fCover').value=url
   document.getElementById('coverPreviewImg').src=url
   document.getElementById('coverPreview').style.display='block'
   document.getElementById('coverResults').style.display='none'
+  // auto-fill title if the field is empty or if title provided
+  if(title){
+    const titleEl=document.getElementById('fTitle')
+    if(!titleEl.value.trim()) titleEl.value=title
+  }
 }
 window.clearCover = function() {
   document.getElementById('fCover').value=''
