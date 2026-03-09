@@ -121,6 +121,21 @@ header{display:flex;align-items:center;justify-content:space-between;padding:16p
 
 /* ── GRID ── */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.grid.size-sm{grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
+.grid.size-lg{grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px}
+.grid.view-list{display:flex;flex-direction:column;gap:8px}
+.grid.view-list .card{display:flex;flex-direction:row;border-radius:10px;overflow:hidden}
+.grid.view-list .card-cover{width:70px;min-width:70px;aspect-ratio:unset;height:100px}
+.grid.view-list .card-body{flex:1;padding:10px 12px;display:flex;flex-direction:column;gap:3px;min-width:0}
+.grid.view-list .card-title{font-size:0.88rem;-webkit-line-clamp:1}
+.grid.view-list .card-dl{margin-bottom:0}
+.grid.view-list .tags{flex-wrap:nowrap;overflow:hidden}
+.grid.view-list .card-actions{margin-top:auto}
+.view-btn{background:transparent;border:1px solid var(--border);border-radius:6px;padding:6px 9px;color:var(--text2);cursor:pointer;font-size:0.8rem;transition:all 0.18s;line-height:1}
+.view-btn:hover{border-color:var(--accent2);color:var(--text)}
+.view-btn.active{background:var(--surface2);border-color:var(--accent2);color:var(--accent2)}
+.dup-warning{background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.4);border-radius:8px;padding:9px 13px;font-size:0.7rem;color:#fcd34d;margin-top:8px;display:none;line-height:1.7}
+.dup-warning a{color:#f59e0b;cursor:pointer;text-decoration:underline}
 
 /* ── CARD ── */
 .card{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;transition:all 0.22s;animation:fadeIn 0.28s ease;position:relative}
@@ -356,6 +371,12 @@ header{display:flex;align-items:center;justify-content:space-between;padding:16p
       <select class="ctrl-select" id="genreFilter" onchange="render()">
         <option value="">All Genres</option>
       </select>
+      <div style="display:flex;gap:4px;align-items:center">
+        <button class="view-btn active" id="vbSm"  onclick="setSize('sm')"  title="Small">S</button>
+        <button class="view-btn active" id="vbMd"  onclick="setSize('md')"  title="Medium">M</button>
+        <button class="view-btn"        id="vbLg"  onclick="setSize('lg')"  title="Large">L</button>
+        <button class="view-btn"        id="vbList" onclick="setSize('list')" title="List view">☰</button>
+      </div>
     </div>
     <div class="filter-row" id="filterRow">
       <button class="chip act-all" data-f="all" onclick="setChip(this)">All</button>
@@ -408,10 +429,11 @@ header{display:flex;align-items:center;justify-content:space-between;padding:16p
 
     <div class="fg"><label>Title *</label>
       <div style="display:flex;gap:8px;align-items:center">
-        <input type="text" id="fTitle" placeholder="Enter title..." style="flex:1" />
+        <input type="text" id="fTitle" placeholder="Enter title..." style="flex:1" oninput="checkDuplicate(this.value)" />
         <button type="button" class="btn" onclick="openGoogleImages()" title="Search Google Images in new tab" style="white-space:nowrap;padding:9px 12px;font-size:0.7rem">🌐 Google</button>
         <button type="button" class="btn" onclick="openImgPicker()" title="Search AniList covers" style="white-space:nowrap;padding:9px 12px;font-size:0.7rem">🔍 AniList</button>
       </div>
+      <div class="dup-warning" id="dupWarning"></div>
     </div>
 
     <!-- Publication status -->
@@ -569,6 +591,7 @@ import { getFirestore, collection, getDocs, addDoc,
 let AUTH=null, DB=null, CU=null
 let entries=[], editingId=null, currentRating=0
 let currentFilter='all', toastTimer=null, coverTimer=null, charts={}
+let currentView='md' // sm | md | lg | list
 const COLL='entries'
 
 const RS = {
@@ -719,6 +742,45 @@ window.setChip = function(el) {
   else if(f.startsWith('rs:')) cls=f.split(':')[1]
   el.classList.add('act-'+cls)
   render()
+}
+
+window.setSize = function(size) {
+  currentView = size
+  localStorage.setItem('mv_view', size)
+  const grid = document.getElementById('grid')
+  grid.className = 'grid'
+  if(size==='sm')   grid.classList.add('size-sm')
+  if(size==='lg')   grid.classList.add('size-lg')
+  if(size==='list') grid.classList.add('view-list')
+  // update button states
+  ;['sm','md','lg','list'].forEach(s => {
+    const b = document.getElementById('vb'+s.charAt(0).toUpperCase()+s.slice(1))
+    if(b) b.classList.toggle('active', s===size)
+  })
+}
+
+window.checkDuplicate = function(val) {
+  const warn = document.getElementById('dupWarning')
+  if(!val || !warn) return
+  const titleLower = val.trim().toLowerCase()
+  // check title duplicate (skip current editing entry)
+  const dupTitle = entries.find(e => e.title.toLowerCase()===titleLower && e.id!==editingId)
+  if(dupTitle) {
+    warn.style.display='block'
+    warn.innerHTML=`⚠ "<strong>${esc(dupTitle.title)}</strong>" already exists in your vault as ${dupTitle.type} · ${dupTitle.readStatus||'plan'} — <a onclick="closeO('entryOverlay');openEdit('${dupTitle.id}')">Edit existing entry</a>`
+    return
+  }
+  warn.style.display='none'
+}
+
+window.checkDuplicateCover = function(url) {
+  if(!url) return
+  const warn = document.getElementById('dupWarning')
+  const dupCover = entries.find(e => e.coverUrl && e.coverUrl===url && e.id!==editingId)
+  if(dupCover) {
+    warn.style.display='block'
+    warn.innerHTML=`⚠ This cover image is already used by "<strong>${esc(dupCover.title)}</strong>" — <a onclick="closeO('entryOverlay');openEdit('${dupCover.id}')">Edit existing entry</a>`
+  }
 }
 
 window.render = function() {
@@ -1093,11 +1155,11 @@ window.selectCover = function(url, title) {
   document.getElementById('coverPreviewImg').src=url
   document.getElementById('coverPreview').style.display='block'
   document.getElementById('coverResults').style.display='none'
-  // auto-fill title if the field is empty or if title provided
   if(title){
     const titleEl=document.getElementById('fTitle')
-    if(!titleEl.value.trim()) titleEl.value=title
+    if(!titleEl.value.trim()) { titleEl.value=title; checkDuplicate(title) }
   }
+  checkDuplicateCover(url)
 }
 window.clearCover = function() {
   document.getElementById('fCover').value=''
@@ -1121,6 +1183,7 @@ function resetForm() {
   document.getElementById('coverPreview').style.display='none'
   document.getElementById('coverManualWrap').style.display='none'
   const mu=document.getElementById('coverManualUrl'); if(mu) mu.value=''
+  const dw=document.getElementById('dupWarning'); if(dw){ dw.style.display='none'; dw.innerHTML='' }
   setRating(0)
 }
 
@@ -1190,6 +1253,7 @@ window.onManualCoverInput = function(url) {
     document.getElementById('fCover').value=url.trim()
     document.getElementById('coverPreviewImg').src=url.trim()
     document.getElementById('coverPreview').style.display='block'
+    checkDuplicateCover(url.trim())
   } else {
     document.getElementById('fCover').value=''
     document.getElementById('coverPreview').style.display='none'
@@ -1349,6 +1413,9 @@ const HARDCODED_CFG = {
 }
 localStorage.setItem('mv_fb', JSON.stringify(HARDCODED_CFG))
 try{ boot(HARDCODED_CFG) }catch(e){ showOnly('setupScreen') }
+// restore saved view preference
+const savedView = localStorage.getItem('mv_view')
+if(savedView) setTimeout(()=>setSize(savedView), 100)
 </script>
 </body>
 </html>
