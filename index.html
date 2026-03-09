@@ -135,6 +135,15 @@ header{display:flex;align-items:center;justify-content:space-between;padding:16p
 .view-btn:hover{border-color:var(--accent2);color:var(--text)}
 .view-btn.active{background:var(--surface2);border-color:var(--accent2);color:var(--accent2)}
 .dup-warning{background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.4);border-radius:8px;padding:9px 13px;font-size:0.7rem;color:#fcd34d;margin-top:8px;display:none;line-height:1.7}
+.genre-tags-wrap{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px;min-height:10px}
+.genre-tag-pill{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:0.63rem;cursor:pointer;border:1px solid var(--border);background:var(--surface2);color:var(--text2);font-family:Space Mono,monospace;transition:all 0.15s;user-select:none}
+.genre-tag-pill:hover{border-color:var(--accent2);color:var(--text)}
+.genre-tag-pill.selected{background:rgba(124,58,237,0.15);border-color:var(--accent2);color:#a78bfa}
+.genre-tag-pill .pill-x{color:var(--text3);font-size:0.7rem;line-height:1;margin-left:2px}
+.genre-tag-pill.selected .pill-x{color:#a78bfa}
+.genre-section-label{font-size:0.58rem;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-top:8px;margin-bottom:3px;display:block}
+.genre-new-tag{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:0.63rem;border:1px dashed var(--text3);background:transparent;color:var(--text3);font-family:Space Mono,monospace;cursor:text}
+.genre-new-input{background:transparent;border:none;outline:none;color:var(--text);font-family:Space Mono,monospace;font-size:0.63rem;width:80px}
 .dup-warning a{color:#f59e0b;cursor:pointer;text-decoration:underline}
 
 /* ── CARD ── */
@@ -462,8 +471,21 @@ header{display:flex;align-items:center;justify-content:space-between;padding:16p
       <input type="number" id="fDownloaded" placeholder="e.g. 30" min="0" />
     </div>
 
-    <div class="fg"><label>Genres</label>
-      <input type="text" id="fGenres" placeholder="Action, Romance, Fantasy..." />
+    <div class="fg">
+      <label>Genres</label>
+      <input type="hidden" id="fGenres" />
+      <div id="genrePickerWrap">
+        <span class="genre-section-label" id="existingGenreLabel" style="display:none">Your existing genres — click to add:</span>
+        <div class="genre-tags-wrap" id="existingGenreTags"></div>
+        <span class="genre-section-label" style="margin-top:10px">Selected:</span>
+        <div class="genre-tags-wrap" id="selectedGenreTags">
+          <span style="font-size:0.65rem;color:var(--text3)" id="noGenreMsg">None yet — pick from above or type below</span>
+        </div>
+        <div class="genre-new-tag" style="margin-top:6px">
+          <span style="color:var(--text3);font-size:0.7rem">+</span>
+          <input type="text" id="genreNewInput" class="genre-new-input" placeholder="Add new genre..." onkeydown="onGenreKeydown(event)" />
+        </div>
+      </div>
     </div>
 
     <div class="fg"><label>Link (MAL / MangaDex / AniList)</label>
@@ -742,6 +764,64 @@ window.setChip = function(el) {
   else if(f.startsWith('rs:')) cls=f.split(':')[1]
   el.classList.add('act-'+cls)
   render()
+}
+
+// ── GENRE TAG PICKER ──────────────────────────────────────────────────────
+let selectedGenres = []
+
+function getAllGenres() {
+  const all = new Set()
+  entries.forEach(e => (e.genres||[]).forEach(g => all.add(g)))
+  return [...all].sort()
+}
+
+function renderGenrePicker() {
+  const existing = getAllGenres()
+  const existingWrap = document.getElementById('existingGenreTags')
+  const existingLabel = document.getElementById('existingGenreLabel')
+  const selectedWrap = document.getElementById('selectedGenreTags')
+  const noMsg = document.getElementById('noGenreMsg')
+
+  // existing genres (not already selected)
+  const unselected = existing.filter(g => !selectedGenres.includes(g))
+  if(unselected.length) {
+    existingLabel.style.display = 'block'
+    existingWrap.innerHTML = unselected.map(g =>
+      `<span class="genre-tag-pill" onclick="addGenre('${g.replace(/'/g,"&#39;")}')">${esc(g)}</span>`
+    ).join('')
+  } else {
+    existingLabel.style.display = unselected.length===0 && existing.length>0 ? 'none' : 'block'
+    existingWrap.innerHTML = ''
+  }
+
+  // selected genres
+  if(selectedGenres.length) {
+    if(noMsg) noMsg.style.display = 'none'
+    selectedWrap.innerHTML = selectedGenres.map(g =>
+      `<span class="genre-tag-pill selected" onclick="removeGenre('${g.replace(/'/g,"&#39;")}')">${esc(g)} <span class="pill-x">✕</span></span>`
+    ).join('')
+  } else {
+    if(noMsg) noMsg.style.display = 'inline'
+    selectedWrap.innerHTML = `<span style="font-size:0.65rem;color:var(--text3)" id="noGenreMsg">None yet — pick from above or type below</span>`
+  }
+
+  // sync hidden input
+  document.getElementById('fGenres').value = selectedGenres.join(', ')
+}
+
+window.addGenre = function(g) {
+  if(!selectedGenres.includes(g)) { selectedGenres.push(g); renderGenrePicker() }
+}
+window.removeGenre = function(g) {
+  selectedGenres = selectedGenres.filter(x => x !== g); renderGenrePicker()
+}
+window.onGenreKeydown = function(e) {
+  if(e.key==='Enter' || e.key===',') {
+    e.preventDefault()
+    const val = document.getElementById('genreNewInput').value.trim().replace(/,$/,'')
+    if(val && !selectedGenres.includes(val)) { selectedGenres.push(val); renderGenrePicker() }
+    document.getElementById('genreNewInput').value = ''
+  }
 }
 
 window.setSize = function(size) {
@@ -1143,7 +1223,7 @@ async function fetchPubStatus(title) {
     const tcEl=document.getElementById('fTotalChapters')
     if(chapCount && !tcEl.value) tcEl.value=chapCount
     const gf=document.getElementById('fGenres')
-    if(!gf.value && m.genres?.length) gf.value=m.genres.slice(0,5).join(', ')
+    if(!selectedGenres.length && m.genres?.length){ selectedGenres=m.genres.slice(0,5); renderGenrePicker() }
   } catch(e){
     display.textContent='Could not fetch'
     sel.value='unknown'
@@ -1171,7 +1251,8 @@ window.clearCover = function() {
 
 // ── OPEN ADD / EDIT ────────────────────────────────────────────────────────
 function resetForm() {
-  ;['fTitle','fChapter','fTotalChapters','fDownloaded','fGenres','fLink','fNotes'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value='' })
+  ;['fTitle','fChapter','fTotalChapters','fDownloaded','fLink','fNotes'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value='' })
+  selectedGenres=[]; renderGenrePicker()
   document.getElementById('fType').value='manhwa'
   document.getElementById('fReadStatus').value='plan'
   document.getElementById('fCover').value=''
@@ -1210,7 +1291,7 @@ window.openEdit = function(id) {
   document.getElementById('fChapter').value=e.chapter||''
   document.getElementById('fTotalChapters').value=e.totalChapters||''
   document.getElementById('fDownloaded').value=e.downloaded||''
-  document.getElementById('fGenres').value=(e.genres||[]).join(', ')
+  selectedGenres=[...(e.genres||[])]; renderGenrePicker()
   document.getElementById('fLink').value=e.link||''
   document.getElementById('fNotes').value=e.notes||''
   document.getElementById('fPubStatus').value=e.pubStatus||''
