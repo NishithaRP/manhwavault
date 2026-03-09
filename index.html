@@ -402,7 +402,8 @@ header{display:flex;align-items:center;justify-content:space-between;padding:16p
     <div class="fg"><label>Title *</label>
       <div style="display:flex;gap:8px;align-items:center">
         <input type="text" id="fTitle" placeholder="Enter title..." style="flex:1" />
-        <button type="button" class="btn" onclick="openImgPicker()" title="Search Google Images for cover" style="white-space:nowrap;padding:9px 12px;font-size:0.7rem">🔍 Images</button>
+        <button type="button" class="btn" onclick="openGoogleImages()" title="Search Google Images in new tab" style="white-space:nowrap;padding:9px 12px;font-size:0.7rem">🌐 Google</button>
+        <button type="button" class="btn" onclick="openImgPicker()" title="Search AniList covers" style="white-space:nowrap;padding:9px 12px;font-size:0.7rem">🔍 AniList</button>
       </div>
     </div>
 
@@ -1215,6 +1216,16 @@ window.fetchEntries=fetchEntries
 // ── INIT ───────────────────────────────────────────────────────────────────
 // ── IMAGE PICKER ──────────────────────────────────────────────────────────
 let pickedImgUrl = null
+
+window.openGoogleImages = function() {
+  const title = document.getElementById('fTitle').value.trim()
+  const query = title ? title + ' manhwa webtoon cover' : 'manhwa cover'
+  const url = `https://www.google.com/search?q=${encodeURIComponent(query)}&tbm=isch`
+  window.open(url, '_blank')
+  // Show paste URL box so user can paste after finding image
+  showManualCoverInput()
+  showToast('Right-click an image → Copy image address → paste in URL box below 👇')
+}
 
 window.openImgPicker = function() {
   const title = document.getElementById('fTitle').value.trim()
