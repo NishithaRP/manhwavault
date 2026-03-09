@@ -325,6 +325,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:16p
     <div class="header-right">
       <span class="user-pill" id="userPill">👤</span>
       <button class="btn-icon" onclick="toggleTheme()" id="themeBtn" title="Toggle light/dark">🌙</button>
+      <button class="btn-icon" onclick="toggleAllBlur()" id="blurAllBtn" title="Toggle blur all pornhwa covers">🔞</button>
       <button class="btn btn-primary" onclick="openAdd()">＋ Add</button>
       <button class="btn-icon" onclick="exportCSV()" title="Export to CSV">📤</button>
       <button class="btn-icon" onclick="openGoogleSetup()" title="Google Image Search setup">🔍</button>
@@ -815,6 +816,25 @@ function setGrid(h){ document.getElementById('grid').innerHTML=h }
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
 
 // ── FAVOURITE TOGGLE ───────────────────────────────────────────────────────
+let allRevealed = false
+window.toggleAllBlur = function() {
+  allRevealed = !allRevealed
+  document.querySelectorAll('.card-cover img.blurred').forEach(img => {
+    const overlay = img.parentNode.querySelector('.blur-overlay')
+    if(allRevealed){
+      img.classList.add('revealed')
+      if(overlay) overlay.classList.add('hidden')
+    } else {
+      img.classList.remove('revealed')
+      if(overlay) overlay.classList.remove('hidden')
+    }
+  })
+  const btn = document.getElementById('blurAllBtn')
+  btn.style.background = allRevealed ? 'rgba(232,67,147,0.2)' : 'transparent'
+  btn.style.borderColor = allRevealed ? 'var(--accent)' : 'var(--border)'
+  showToast(allRevealed ? '🔞 All covers revealed' : '🔒 All covers blurred')
+}
+
 window.toggleBlur = function(el) {
   // el could be the img or the overlay — find the img
   let img = el
