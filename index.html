@@ -873,7 +873,7 @@ async function searchCovers(title) {
     const media=await fetchAniList(title)
     const results=media.map(m=>({url:m.coverImage?.extraLarge||m.coverImage?.large,title:m.title?.english||m.title?.romaji||''})).filter(r=>r.url)
     if(!results.length){ resultsEl.innerHTML='<div class="cover-none">No covers found — paste URL below</div>'; return }
-    resultsEl.innerHTML=results.map(r=>`<img class="cover-option" src="${r.url}" title="${esc(r.title)}" onclick="selectCover('${r.url}','${r.title.replace(/'/g,\"&#39;\").replace(/\\/g,'')}')" onerror="this.style.display='none'" loading="lazy"/>`).join('')
+    resultsEl.innerHTML=results.map(r=>{const t=r.title.replace(/'/g,'').replace(/"/g,''); return `<img class="cover-option" src="${r.url}" title="${esc(r.title)}" onclick="selectCover('${r.url}','${t}')" onerror="this.style.display='none'" loading="lazy"/>`}).join('')
   } catch(e){
     resultsEl.innerHTML='<div class="cover-none">Could not fetch covers — paste URL below</div>'
   }
@@ -1157,9 +1157,15 @@ document.getElementById('regPassword2').addEventListener('keydown',e=>{ if(e.key
 window.fetchEntries=fetchEntries
 
 // ── INIT ───────────────────────────────────────────────────────────────────
-const saved=localStorage.getItem('mv_fb')
-if(saved){ try{ boot(JSON.parse(saved)) }catch(e){ showOnly('setupScreen') } }
-else showOnly('setupScreen')
+// Firebase config hardcoded — no setup screen needed
+const HARDCODED_CFG = {
+  apiKey: 'AIzaSyBGdz1D87QjPQ1vfFE1GWqf_liDqKK1Srw',
+  projectId: 'manhwavault-27403',
+  appId: '1:580881645037:web:183241312cc4ec008c3be4',
+  authDomain: 'manhwavault-27403.firebaseapp.com'
+}
+localStorage.setItem('mv_fb', JSON.stringify(HARDCODED_CFG))
+try{ boot(HARDCODED_CFG) }catch(e){ showOnly('setupScreen') }
 </script>
 </body>
 </html>
