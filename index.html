@@ -863,31 +863,19 @@ async function searchCovers(title) {
   const resultsEl=document.getElementById('coverResults')
   if(document.getElementById('fCover').value) return
   if(!title||title.length<2){ resultsEl.style.display='none'; return }
-  const isPornhwa=document.getElementById('fType').value==='pornhwa'
-  if(isPornhwa){
-    // Use DuckDuckGo image proxy — no API key needed
-    resultsEl.style.display='flex'
-    resultsEl.innerHTML='<div class="cover-searching"><span class="cover-spinner"></span> Searching images...</div>'
-    try {
-      await searchPornhwaCovers(title, resultsEl)
-    } catch(e) {
-      resultsEl.innerHTML='<div class="cover-none">Could not search — paste URL below</div>'
-      showManualCoverInput()
-    }
-    return
-  }
-  // Manhwa — use AniList
-  document.getElementById('coverManualWrap').style.display='none'
-  document.getElementById('coverHint').textContent='(auto-fetched when you type the title)'
+  // Use AniList for both manhwa and pornhwa
+  // AniList may not have all pornhwa but will find many — user can pick best match or paste URL
+  document.getElementById('coverHint').textContent='(auto-fetched — pick best match or paste URL below)'
+  showManualCoverInput()
   resultsEl.style.display='flex'
-  resultsEl.innerHTML='<div class="cover-searching"><span class="cover-spinner"></span> Searching...</div>'
+  resultsEl.innerHTML='<div class="cover-searching"><span class="cover-spinner"></span> Searching covers...</div>'
   try {
     const media=await fetchAniList(title)
     const results=media.map(m=>({url:m.coverImage?.extraLarge||m.coverImage?.large,title:m.title?.english||m.title?.romaji||''})).filter(r=>r.url)
-    if(!results.length){ resultsEl.innerHTML='<div class="cover-none">No covers found</div>'; return }
+    if(!results.length){ resultsEl.innerHTML='<div class="cover-none">No covers found — paste URL below</div>'; return }
     resultsEl.innerHTML=results.map(r=>`<img class="cover-option" src="${r.url}" title="${esc(r.title)}" onclick="selectCover('${r.url}')" onerror="this.style.display='none'" loading="lazy"/>`).join('')
   } catch(e){
-    resultsEl.innerHTML='<div class="cover-none">Could not fetch covers</div>'
+    resultsEl.innerHTML='<div class="cover-none">Could not fetch covers — paste URL below</div>'
   }
 }
 
