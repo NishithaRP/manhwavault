@@ -129,6 +129,12 @@ header{display:flex;align-items:center;justify-content:space-between;padding:16p
 .card-cover{width:100%;aspect-ratio:2/3;background:var(--surface2);position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden}
 .card-cover-icon{font-size:2.2rem;opacity:0.2}
 .card-cover img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.card-cover img.blurred{filter:blur(12px) brightness(0.7);transform:scale(1.08);transition:filter 0.3s,transform 0.3s}
+.card-cover img.blurred.revealed{filter:none;transform:scale(1)}
+.blur-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:3;cursor:pointer;transition:opacity 0.3s}
+.blur-overlay.hidden{opacity:0;pointer-events:none}
+.blur-overlay-icon{font-size:1.6rem;filter:drop-shadow(0 2px 6px rgba(0,0,0,0.8))}
+.blur-overlay-text{font-size:0.55rem;color:rgba(255,255,255,0.8);text-transform:uppercase;letter-spacing:0.1em;margin-top:4px;font-family:Syne,sans-serif;font-weight:700;text-shadow:0 1px 4px rgba(0,0,0,0.8)}
 .card-fav-btn{position:absolute;top:6px;right:6px;background:rgba(0,0,0,0.5);border:none;border-radius:50%;width:26px;height:26px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;z-index:2;transition:all 0.2s;backdrop-filter:blur(4px)}
 .card-fav-btn:hover{transform:scale(1.2)}
 .type-badge{position:absolute;top:6px;left:6px;padding:2px 7px;border-radius:4px;font-size:0.55rem;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;font-family:'Syne',sans-serif;z-index:1}
@@ -765,7 +771,10 @@ function cardHTML(e) {
   const rs=RS[e.readStatus]||RS.plan
   const stars='⭐'.repeat(e.rating||0)+'☆'.repeat(5-(e.rating||0))
   const tags=(e.genres||[]).slice(0,3).map(g=>`<span class="tag">${esc(g)}</span>`).join('')
-  const cover=e.coverUrl?`<img src="${esc(e.coverUrl)}" alt="" onerror="this.style.display='none'" loading="lazy"/>`:''
+  const isPorn=e.type==='pornhwa'
+  const imgClass=isPorn?'blurred':''
+  const cover=e.coverUrl?`<img src="${esc(e.coverUrl)}" alt="" class="${imgClass}" onclick="toggleBlur(this)" onerror="this.style.display='none'" loading="lazy"/>`:''
+  const blurOverlay=isPorn&&e.coverUrl?`<div class="blur-overlay" onclick="toggleBlur(this.previousElementSibling||this.parentNode.querySelector('img'))"><span class="blur-overlay-icon">🔞</span><span class="blur-overlay-text">Tap to reveal</span></div>`:''
   const pubStatus=e.pubStatus||'unknown'
   const pubLabel=pubStatus==='unknown'?'':pubStatus
   const pubBadge=pubLabel?`<span class="pub-badge pub-${pubLabel}">${pubLabel}</span>`:''
@@ -780,6 +789,7 @@ function cardHTML(e) {
     <div class="card-cover">
       <div class="card-cover-icon">${e.type==='pornhwa'?'🔞':'📖'}</div>
       ${cover}
+      ${blurOverlay}
       <span class="type-badge badge-${e.type}">${e.type}</span>
       ${pubBadge}
       <button class="card-fav-btn" onclick="toggleFav('${e.id}')" title="Favourite">${favIcon}</button>
@@ -805,6 +815,22 @@ function setGrid(h){ document.getElementById('grid').innerHTML=h }
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
 
 // ── FAVOURITE TOGGLE ───────────────────────────────────────────────────────
+window.toggleBlur = function(el) {
+  // el could be the img or the overlay — find the img
+  let img = el
+  if(el.tagName !== 'IMG') img = el.closest('.card-cover')?.querySelector('img')
+  if(!img) return
+  const overlay = img.parentNode.querySelector('.blur-overlay')
+  const isBlurred = img.classList.contains('blurred') && !img.classList.contains('revealed')
+  if(isBlurred){
+    img.classList.add('revealed')
+    if(overlay) overlay.classList.add('hidden')
+  } else {
+    img.classList.remove('revealed')
+    if(overlay) overlay.classList.remove('hidden')
+  }
+}
+
 window.updateDownloaded = async function(id, delta) {
   const e=entries.find(x=>x.id===id); if(!e) return
   const newVal=Math.max(0,(e.downloaded||0)+delta)
