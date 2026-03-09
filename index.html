@@ -745,7 +745,9 @@ function cardHTML(e) {
   const link=e.link?`<a class="card-link" href="${esc(e.link)}" target="_blank" rel="noopener">🔗 View</a>`:''
   const dates=[]
   const datesHTML=''
-  const chapHTML=e.chapter?`<div class="card-chapter">Ch. ${e.chapter}${e.totalChapters?' / '+e.totalChapters:''}</div>`:''
+  const chapHTML=e.chapter?`<div class="card-chapter">📖 Ch.${e.chapter}${e.totalChapters?' / '+e.totalChapters:''}</div>`:''
+  const dlCount=e.downloaded||0
+  const dlHTML=`<div class="card-dl"><button class="card-dl-btn card-dl-btn-minus" onclick="updateDownloaded('${e.id}',-1)">−</button><span class="card-dl-label">💾</span><span class="card-dl-count">${dlCount}${e.totalChapters?' / '+e.totalChapters:''}</span><button class="card-dl-btn" onclick="updateDownloaded('${e.id}',1)">+</button></div>`
   return `<div class="card">
     <div class="card-cover">
       <div class="card-cover-icon">${e.type==='pornhwa'?'🔞':'📖'}</div>
